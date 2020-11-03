@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"log"
 	"time"
-	"tugasmvc/app/config"
 	"tugasmvc/app/constant"
 	"tugasmvc/app/utils"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/pkg/errors"
+	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
 
@@ -39,7 +39,7 @@ type Transaction struct {
 
 func Login(auth Auth) (bool, error, string) {
 	var account Account
-	if err := config.DB.Where(&Account{Name: auth.Name}).First(&account).Error; err != nil {
+	if err := DB.Where(&Account{Name: auth.Name}).First(&account).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return false, errors.Errorf("Account not found"), ""
 		}
@@ -67,7 +67,7 @@ func InsertNewAccount(account Account) (bool, error) {
 	account.AccountNumber = utils.RangeIn(111111, 999999)
 	account.Saldo = 0
 	account.IdAccount = fmt.Sprintf("id-%d", utils.RangeIn(111, 999))
-	if err := config.DB.Create(&account).Error; err != nil {
+	if err := DB.Create(&account).Error; err != nil {
 		return false, errors.Errorf("invalid prepare statement :%+v\n", err)
 	}
 	return true, nil
@@ -76,7 +76,7 @@ func InsertNewAccount(account Account) (bool, error) {
 func GetAccountDetail(idAccount int) (bool, error, []Transaction, Account) {
 	var transaction []Transaction
 	var account Account
-	if err := config.DB.Where("sender = ? OR recipient = ?", idAccount, idAccount).
+	if err := DB.Where("sender = ? OR recipient = ?", idAccount, idAccount).
 		Find(&transaction).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return false, errors.Errorf("Account not found"), []Transaction{}, Account{}
@@ -85,7 +85,7 @@ func GetAccountDetail(idAccount int) (bool, error, []Transaction, Account) {
 		}
 	}
 
-	if err := config.DB.Where(&Account{AccountNumber: idAccount}).Find(&account).Error; err != nil {
+	if err := DB.Where(&Account{AccountNumber: idAccount}).Find(&account).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return false, errors.Errorf("Account not found"), []Transaction{}, Account{}
 		} else {
@@ -103,7 +103,7 @@ func GetAccountDetail(idAccount int) (bool, error, []Transaction, Account) {
 
 func Transfer(transaction Transaction) (bool, error) {
 
-	err := config.DB.Transaction(func(tx *gorm.DB) error {
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		// do some database operations in the transaction (use 'tx' from this point, not 'db')
 		var sender, recipient Account
 		if err := tx.Model(&Account{}).Where(&Account{AccountNumber: transaction.Sender}).
@@ -134,7 +134,7 @@ func Transfer(transaction Transaction) (bool, error) {
 }
 
 func Withdraw(transaction Transaction) (bool, error) {
-	err := config.DB.Transaction(func(tx *gorm.DB) error {
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		var sender Account
 		if err := tx.Model(&Account{}).Where(&Account{AccountNumber: transaction.Sender}).
 			First(&sender).
@@ -157,7 +157,7 @@ func Withdraw(transaction Transaction) (bool, error) {
 }
 
 func Deposit(transaction Transaction) (bool, error) {
-	err := config.DB.Transaction(func(tx *gorm.DB) error {
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		var sender Account
 		if err := tx.Model(&Account{}).Where(&Account{AccountNumber: transaction.Sender}).
 			First(&sender).
@@ -178,4 +178,17 @@ func Deposit(transaction Transaction) (bool, error) {
 	}
 
 	return true, nil
+}
+
+//DB ------------------------------------------
+var DB *gorm.DB
+
+func init() {
+	var err error
+	DB, err = gorm.Open(mysql.Open(fmt.Sprintf("root:@/digitalent_bank?charset=utf8&parseTime=True&loc=Local")), &gorm.Config{})
+	if err != nil {
+		panic("failede to connect to database" + err.Error())
+	}
+	DB.AutoMigrate(new(Account), new(Transaction))
+
 }
